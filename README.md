@@ -27,3 +27,37 @@ The installation script runs automatically within a detached `screen` session.
 ```bash
 screen -r debian_install
 ```
+
+## 🛠 Advanced: Using Configuration Files
+
+The installer supports automatic configuration through the use of a **predefined configuration file**:
+
+### How it works:
+
+1. **Create** a file named `hetzner-debian-installer.conf.bash` in the same directory as the installation script.
+
+   Example configuration (`hetzner-debian-installer.conf.bash`):
+
+   ```bash
+   # Partitioning
+   PART_DRIVE1="/dev/nvme0n1"
+   PART_DRIVE2="/dev/nvme1n1"
+   PART_USE_RAID="yes"
+   PART_RAID_LEVEL="1"
+   PART_BOOT_SIZE="512M"
+   PART_SWAP_SIZE="32G"
+   PART_ROOT_FS="ext4"
+   PART_BOOT_FS="ext3"
+
+   # Debian installation
+   DEBIAN_RELEASE="stable"
+   DEBIAN_MIRROR="http://deb.debian.org/debian"
+
+   ....
+   
+   ```
+
+2. **Run the installer script** as usual. It will automatically detect and apply configuration values from the file.  
+   If some parameters are not defined, the installer will ask interactively during runtime.
+
+3. Before starting the installation, the installer will display a **summary of the configuration** and ask you to confirm.
