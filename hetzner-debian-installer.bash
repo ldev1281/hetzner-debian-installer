@@ -1,87 +1,127 @@
 #!/bin/bash
 set -e
 
+CONFIG_FILE="hetzner-debian-installer.conf.bash"
 SESSION_NAME="debian_install"
 
-# If we're not inside a screen session, start one automatically
+# Load config file if exists
+if [ -f "$CONFIG_FILE" ]; then
+    echo "Loading configuration from $CONFIG_FILE"
+    source "$CONFIG_FILE"
+else
+    echo "No configuration file found, proceeding interactively."
+fi
+
+# Auto-start inside screen session
 if [ -z "$STY" ]; then
-    if ! command -v screen &> /dev/null; then
+    if ! command -v screen &>/dev/null; then
         echo "Installing screen..."
         apt update && apt install screen -y
     fi
-    echo "Starting installation inside a screen session: $SESSION_NAME"
+    echo "Launching installation inside screen session '$SESSION_NAME'..."
     screen -dmS "$SESSION_NAME" bash "$0"
-    echo "Reattach using: screen -r $SESSION_NAME"
+    echo "Reconnect with: screen -r $SESSION_NAME"
     exit 0
 fi
 
-# Rename screen session
 screen -S "$STY" -X sessionname "$SESSION_NAME"
 
-### STEP 1: Configuration Parameters ###
-configure_installation() {
-    echo "[STEP 1] Configuration parameters..."
+### CONFIGURE FUNCTIONS ###
 
-    # Example configuration prompts (to be customized)
-    read -rp "Enter your desired hostname: " HOSTNAME
-    read -rp "Enter root password: " ROOT_PASSWORD
-    read -rp "Enter main disk name (e.g., /dev/nvme0n1): " DISK
-
-    # Exporting variables for other steps
-    export HOSTNAME ROOT_PASSWORD DISK
-
-    echo "Configuration set:"
-    echo "Hostname: $HOSTNAME"
-    echo "Disk: $DISK"
+configure_partitioning() {
+    echo "[Configuring] Partitioning parameters"
+    : "${PART_DRIVE1:?$(read -rp 'Primary disk (e.g., /dev/nvme0n1): ' PART_DRIVE1)}"
+    : "${PART_DRIVE2:?$(read -rp 'Secondary disk for RAID (optional): ' PART_DRIVE2)}"
+    : "${PART_USE_RAID:?$(read -rp 'Use RAID? (yes/no): ' PART_USE_RAID)}"
+    : "${PART_RAID_LEVEL:?$(read -rp 'RAID Level (e.g., 1): ' PART_RAID_LEVEL)}"
+    : "${PART_BOOT_SIZE:?$(read -rp 'Boot partition size (e.g., 512M): ' PART_BOOT_SIZE)}"
+    : "${PART_SWAP_SIZE:?$(read -rp 'Swap size (e.g., 32G): ' PART_SWAP_SIZE)}"
+    : "${PART_ROOT_FS:?$(read -rp 'Root filesystem type (e.g., ext4): ' PART_ROOT_FS)}"
+    : "${PART_BOOT_FS:?$(read -rp 'Boot filesystem type (e.g., ext3): ' PART_BOOT_FS)}"
 }
 
-### STEP 2: Disk Partitioning ###
-partition_disk() {
-    echo "[STEP 2] Disk partitioning..."
-    echo "Disk selected: $DISK"
-    # Future disk partitioning commands go here
+configure_debian_install() {
+    echo "[Configuring] Debian install parameters"
+    : "${DEBIAN_RELEASE:?$(read -rp 'Debian release (e.g., stable): ' DEBIAN_RELEASE)}"
+    : "${DEBIAN_MIRROR:?$(read -rp 'Debian mirror: ' DEBIAN_MIRROR)}"
 }
 
-### STEP 3: Minimal Debian Installation ###
-install_debian() {
-    echo "[STEP 3] Installing minimal Debian via debootstrap..."
-    # Future debootstrap installation commands go here
+configure_network() {
+    echo "[Configuring] Network parameters"
+    : "${NETWORK_USE_DHCP:?$(read -rp 'Use DHCP? (yes/no): ' NETWORK_USE_DHCP)}"
 }
 
-### STEP 4: Network Configuration ###
-setup_network() {
-    echo "[STEP 4] Setting up network configuration..."
-    # Future network configuration commands go here
+configure_bootloader() {
+    echo "[Configuring] Bootloader parameters"
+    if [ -z "${GRUB_TARGET_DRIVES[*]}" ]; then
+        read -rp 'GRUB target drives (space-separated): ' -a GRUB_TARGET_DRIVES
+    fi
 }
 
-### STEP 5: Bootloader Installation ###
-install_bootloader() {
-    echo "[STEP 5] Installing bootloader (GRUB)..."
-    # Future bootloader installation commands go here
+configure_initial_config() {
+    echo "[Configuring] Initial system settings"
+    : "${HOSTNAME:?$(read -rp 'Hostname: ' HOSTNAME)}"
+    : "${ROOT_PASSWORD:?$(read -rp 'Root password: ' ROOT_PASSWORD)}"
 }
 
-### STEP 6: Initial System Configuration ###
-initial_config() {
-    echo "[STEP 6] Initial system configuration..."
-    echo "Hostname: $HOSTNAME, Root Password: [hidden]"
-    # Future system initial configuration commands go here
+configure_cleanup() {
+    echo "[Configuring] Cleanup parameters (usually nothing to configure)"
 }
 
-### STEP 7: Cleanup and Reboot ###
-cleanup_and_reboot() {
-    echo "[STEP 7] Cleanup and reboot..."
-    # Future cleanup and reboot commands go here
+### RUN FUNCTIONS (Empty placeholders) ###
+run_partitioning() { echo "[Running] Partitioning..."; }
+run_debian_install() { echo "[Running] Debian installation..."; }
+run_network() { echo "[Running] Network setup..."; }
+run_bootloader() { echo "[Running] Bootloader installation..."; }
+run_initial_config() { echo "[Running] Initial configuration..."; }
+run_cleanup() { echo "[Running] Cleanup and reboot..."; }
+
+### Summary and Confirmation ###
+summary_and_confirm() {
+    echo ""
+    echo "🚀 Configuration Summary:"
+    echo "----------------------------------------"
+    echo "Primary disk:          $PART_DRIVE1"
+    echo "Secondary disk:        $PART_DRIVE2"
+    echo "Use RAID:              $PART_USE_RAID (Level: $PART_RAID_LEVEL)"
+    echo "Boot size/filesystem:  $PART_BOOT_SIZE / $PART_BOOT_FS"
+    echo "Swap size:             $PART_SWAP_SIZE"
+    echo "Root filesystem:       $PART_ROOT_FS"
+    echo "Debian release/mirror: $DEBIAN_RELEASE / $DEBIAN_MIRROR"
+    echo "Use DHCP:              $NETWORK_USE_DHCP"
+    echo "GRUB targets:          ${GRUB_TARGET_DRIVES[*]}"
+    echo "Hostname:              $HOSTNAME"
+    echo "----------------------------------------"
+    read -rp "Start installation with these settings? (yes/no): " CONFIRM
+    if [ "$CONFIRM" != "yes" ]; then
+        echo "Installation aborted by user."
+        exit 1
+    fi
 }
 
-### MAIN: Execute all steps sequentially ###
+### Entrypoints ###
+configuring() {
+    configure_partitioning
+    configure_debian_install
+    configure_network
+    configure_bootloader
+    configure_initial_config
+    configure_cleanup
+}
+
+running() {
+    run_partitioning
+    run_debian_install
+    run_network
+    run_bootloader
+    run_initial_config
+    run_cleanup
+}
+
 main() {
-    configure_installation
-    partition_disk
-    install_debian
-    setup_network
-    install_bootloader
-    initial_config
-    cleanup_and_reboot
+    configuring
+    summary_and_confirm
+    running
 }
 
 main
