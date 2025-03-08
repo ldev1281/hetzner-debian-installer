@@ -19,6 +19,10 @@ wget https://github.com/username/hetzner-debian-installer/releases/latest/downlo
 
 The installation script runs automatically within a detached `screen` session.
 
+> **ℹ️ Note:**  
+> During the first interactive run, your chosen parameters will automatically be saved into `hetzner-debian-installer.conf.bash`.  
+> You can reuse this file to perform future installations non-interactively.
+
 **In case of SSH connection loss**, reconnect and resume the installation by running:
 ```bash
 screen -r debian_install
