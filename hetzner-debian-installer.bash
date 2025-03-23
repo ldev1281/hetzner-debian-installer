@@ -68,8 +68,68 @@ configure_cleanup() {
     echo "[Configuring] Cleanup parameters (usually nothing to configure)"
 }
 
+
+
 ### RUN FUNCTIONS (Empty placeholders) ###
-run_partitioning() { echo "[Running] Partitioning..."; }
+run_partitioning() {
+  set -euo pipefail
+
+  source "$CONFIG_FILE"
+
+  echo "[INFO] Partitioning disks according to the configuration:"
+  cat "$CONFIG_FILE"
+
+  read -p "Continue? (yes/no): " confirm
+  if [ "$confirm" != "yes" ]; then
+    echo "[ABORTED] Operation cancelled by user."
+    exit 1
+  fi
+
+  # Проверка, что диск существует
+  [ ! -b "$PART_DRIVE1" ] && echo "[ERROR] Primary disk $PART_DRIVE1 not found" && exit 1
+  if [ "$PART_USE_RAID" == "yes" ]; then
+    [ ! -b "$PART_DRIVE2" ] && echo "[ERROR] Secondary disk $PART_DRIVE2 not found" && exit 1
+    echo "[INFO] Creating RAID array..."
+    yes | mdadm --create /dev/md0 --level="$PART_RAID_LEVEL" --raid-devices=2 "$PART_DRIVE1" "$PART_DRIVE2"
+    target_disk="/dev/md0"
+  else
+    target_disk="$PART_DRIVE1"
+  fi
+
+  echo "[INFO] Creating GPT partition table..."
+  parted -s "$target_disk" mklabel gpt
+
+  echo "[INFO] Creating /boot partition..."
+  parted -s "$target_disk" mkpart primary "$PART_BOOT_FS" 1MiB "$PART_BOOT_SIZE"
+  parted -s "$target_disk" set 1 boot on
+
+  echo "[INFO] Creating swap partition..."
+  BOOT_END=$(numfmt --from=iec "$PART_BOOT_SIZE")
+  SWAP_END=$(numfmt --from=iec "$PART_SWAP_SIZE")
+  parted -s "$target_disk" mkpart primary linux-swap "$PART_BOOT_SIZE" "$((BOOT_END + SWAP_END))B"
+
+  echo "[INFO] Creating root partition..."
+  parted -s "$target_disk" mkpart primary "$PART_ROOT_FS" "$((BOOT_END + SWAP_END))B" 100%
+
+  echo "[INFO] Waiting for partitions to be available..."
+  sleep 3
+
+  # Автоопределение правильных разделов, с учетом nvmep1, sda1 и т.д.
+  PART_SUFFIX=""
+  [[ "$target_disk" =~ nvme ]] && PART_SUFFIX="p"
+
+  BOOT_PARTITION="${target_disk}${PART_SUFFIX}1"
+  SWAP_PARTITION="${target_disk}${PART_SUFFIX}2"
+  ROOT_PARTITION="${target_disk}${PART_SUFFIX}3"
+
+  echo "[INFO] Formatting partitions..."
+  mkfs."$PART_BOOT_FS" "$BOOT_PARTITION"
+  mkfs."$PART_ROOT_FS" "$ROOT_PARTITION"
+  mkswap "$SWAP_PARTITION"
+
+  echo "[OK] Disk partitioning and formatting completed."
+}
+
 run_debian_install() { echo "[Running] Debian installation..."; }
 run_network() { echo "[Running] Network setup..."; }
 run_bootloader() { echo "[Running] Bootloader installation..."; }
