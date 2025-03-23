@@ -413,35 +413,36 @@ summary_and_confirm() {
     exit 1
   fi
 
-  echo "[INFO] Saving confirmed configuration to $CONFIG_FILE"
-  cat <<EOF > "$CONFIG_FILE"
-# === Partitioning ===
-PART_DRIVE1="$PART_DRIVE1"
-PART_DRIVE2="$PART_DRIVE2"
-PART_USE_RAID="$PART_USE_RAID"
-PART_RAID_LEVEL="$PART_RAID_LEVEL"
-PART_BOOT_SIZE="$PART_BOOT_SIZE"
-PART_SWAP_SIZE="$PART_SWAP_SIZE"
-PART_ROOT_FS="$PART_ROOT_FS"
-PART_BOOT_FS="$PART_BOOT_FS"
-
-# === Debian install ===
-DEBIAN_RELEASE="$DEBIAN_RELEASE"
-DEBIAN_MIRROR="$DEBIAN_MIRROR"
-INSTALL_TARGET="$INSTALL_TARGET"
-
-# === Network ===
-NETWORK_USE_DHCP="$NETWORK_USE_DHCP"
-
-# === GRUB ===
-GRUB_TARGET_DRIVES=(${GRUB_TARGET_DRIVES[*]})
-
-# === System ===
-SYSTEM_HOSTNAME="$SYSTEM_HOSTNAME"
-SYSTEM_SUDO_USER="$SYSTEM_SUDO_USER"
-SYSTEM_USER_PASSWORD_HASH="$SYSTEM_USER_PASSWORD_HASH"
-EOF
+  save_configuration
 }
+
+save_configuration() {
+  echo "[INFO] Saving confirmed configuration to $CONFIG_FILE"
+  {
+    echo "# === Auto-generated configuration ==="
+    declare -p PART_DRIVE1
+    declare -p PART_DRIVE2
+    declare -p PART_USE_RAID
+    declare -p PART_RAID_LEVEL
+    declare -p PART_BOOT_SIZE
+    declare -p PART_SWAP_SIZE
+    declare -p PART_ROOT_FS
+    declare -p PART_BOOT_FS
+
+    declare -p DEBIAN_RELEASE
+    declare -p DEBIAN_MIRROR
+    declare -p INSTALL_TARGET
+
+    declare -p NETWORK_USE_DHCP
+
+    declare -p GRUB_TARGET_DRIVES
+
+    declare -p SYSTEM_HOSTNAME
+    declare -p SYSTEM_SUDO_USER
+    declare -p SYSTEM_USER_PASSWORD_HASH
+  } > "$CONFIG_FILE"
+}
+
 ### Entrypoints ###
 configuring() {
     configure_partitioning
