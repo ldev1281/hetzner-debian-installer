@@ -29,15 +29,67 @@ screen -S "$STY" -X sessionname "$SESSION_NAME"
 ### CONFIGURE FUNCTIONS ###
 
 configure_partitioning() {
-    echo "[Configuring] Partitioning parameters"
-    : "${PART_DRIVE1:?$(read -rp 'Primary disk (e.g., /dev/nvme0n1): ' PART_DRIVE1)}"
-    : "${PART_DRIVE2:?$(read -rp 'Secondary disk for RAID (optional): ' PART_DRIVE2)}"
-    : "${PART_USE_RAID:?$(read -rp 'Use RAID? (yes/no): ' PART_USE_RAID)}"
-    : "${PART_RAID_LEVEL:?$(read -rp 'RAID Level (e.g., 1): ' PART_RAID_LEVEL)}"
-    : "${PART_BOOT_SIZE:?$(read -rp 'Boot partition size (e.g., 512M): ' PART_BOOT_SIZE)}"
-    : "${PART_SWAP_SIZE:?$(read -rp 'Swap size (e.g., 32G): ' PART_SWAP_SIZE)}"
-    : "${PART_ROOT_FS:?$(read -rp 'Root filesystem type (e.g., ext4): ' PART_ROOT_FS)}"
-    : "${PART_BOOT_FS:?$(read -rp 'Boot filesystem type (e.g., ext3): ' PART_BOOT_FS)}"
+  echo "[Step] Disk detection and RAID decision"
+
+  echo "[INFO] Scanning available disks..."
+  mapfile -t disks < <(lsblk -dn -o NAME,SIZE | awk '{print "/dev/" $1 " (" $2 ")"}')
+
+  if [ "${#disks[@]}" -eq 0 ]; then
+    echo "[ERROR] No disks found."
+    exit 1
+  fi
+
+  echo "[INFO] Detected disks:"
+  for disk in "${disks[@]}"; do
+    echo " - $disk"
+  done
+
+  default_primary=$(echo "${disks[0]}" | awk '{print $1}')
+  PART_USE_RAID="no"
+  PART_RAID_LEVEL="1"
+
+  read -p "Primary disk [${default_primary}]: " PART_DRIVE1
+  PART_DRIVE1=${PART_DRIVE1:-$default_primary}
+
+  if [ "${#disks[@]}" -ge 2 ]; then
+    second_disk=$(echo "${disks[1]}" | awk '{print $1}')
+    read -p "Secondary disk for RAID (leave empty if none) [${second_disk}]: " PART_DRIVE2
+    PART_DRIVE2=${PART_DRIVE2:-$second_disk}
+
+    if [ -n "$PART_DRIVE2" ]; then
+      size1=$(lsblk -bn -o SIZE "$PART_DRIVE1" | head -n1)
+      size2=$(lsblk -bn -o SIZE "$PART_DRIVE2" | head -n1)
+      if [ "$size1" -eq "$size2" ]; then
+        default_raid="yes"
+      else
+        echo "[WARN] Disks are of different size. RAID is not recommended."
+        default_raid="no"
+      fi
+
+      read -p "Use RAID? (yes/no) [$default_raid]: " PART_USE_RAID
+      PART_USE_RAID=${PART_USE_RAID:-$default_raid}
+
+      if [ "$PART_USE_RAID" = "yes" ]; then
+        read -p "RAID Level [1]: " PART_RAID_LEVEL
+        PART_RAID_LEVEL=${PART_RAID_LEVEL:-1}
+      fi
+    fi
+  fi
+
+  echo "[Step] Filesystem and partition sizes"
+
+  read -p "Boot partition size [512M]: " PART_BOOT_SIZE
+  PART_BOOT_SIZE=${PART_BOOT_SIZE:-512M}
+
+  default_swap_size=$(awk '/MemTotal/ {printf "%.0fMiB", $2/1024}' /proc/meminfo)
+  read -p "Swap partition size [$default_swap_size]: " PART_SWAP_SIZE
+  PART_SWAP_SIZE=${PART_SWAP_SIZE:-$default_swap_size}
+
+  read -p "Root filesystem type [ext4]: " PART_ROOT_FS
+  PART_ROOT_FS=${PART_ROOT_FS:-ext4}
+
+  read -p "Boot filesystem type [ext3]: " PART_BOOT_FS
+  PART_BOOT_FS=${PART_BOOT_FS:-ext3}
 }
 
 configure_debian_install() {
