@@ -93,9 +93,15 @@ configure_partitioning() {
 }
 
 configure_debian_install() {
-    echo "[Configuring] Debian install parameters"
-    : "${DEBIAN_RELEASE:?$(read -rp 'Debian release (e.g., stable): ' DEBIAN_RELEASE)}"
-    : "${DEBIAN_MIRROR:?$(read -rp 'Debian mirror: ' DEBIAN_MIRROR)}"
+  echo "[Step] Debian base system configuration"
+
+  read -p "Debian release (stable, testing, sid) [stable]: " DEBIAN_RELEASE
+  DEBIAN_RELEASE=${DEBIAN_RELEASE:-stable}
+
+  read -p "Debian mirror URL [http://deb.debian.org/debian]: " DEBIAN_MIRROR
+  DEBIAN_MIRROR=${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+
+  INSTALL_TARGET="/mnt"
 }
 
 configure_network() {
