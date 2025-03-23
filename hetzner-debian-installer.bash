@@ -393,27 +393,55 @@ run_cleanup() { echo "[Running] Cleanup and reboot..."; }
 
 ### Summary and Confirmation ###
 summary_and_confirm() {
-    echo ""
-    echo "🚀 Configuration Summary:"
-    echo "----------------------------------------"
-    echo "Primary disk:          $PART_DRIVE1"
-    echo "Secondary disk:        $PART_DRIVE2"
-    echo "Use RAID:              $PART_USE_RAID (Level: $PART_RAID_LEVEL)"
-    echo "Boot size/filesystem:  $PART_BOOT_SIZE / $PART_BOOT_FS"
-    echo "Swap size:             $PART_SWAP_SIZE"
-    echo "Root filesystem:       $PART_ROOT_FS"
-    echo "Debian release/mirror: $DEBIAN_RELEASE / $DEBIAN_MIRROR"
-    echo "Use DHCP:              $NETWORK_USE_DHCP"
-    echo "GRUB targets:          ${GRUB_TARGET_DRIVES[*]}"
-    echo "Hostname:              $HOSTNAME"
-    echo "----------------------------------------"
-    read -rp "Start installation with these settings? (yes/no): " CONFIRM
-    if [ "$CONFIRM" != "yes" ]; then
-        echo "Installation aborted by user."
-        exit 1
-    fi
-}
+  echo ""
+  echo "====== Configuration Summary ======"
+  echo "Primary disk:          $PART_DRIVE1"
+  echo "Secondary disk:        $PART_DRIVE2"
+  echo "Use RAID:              $PART_USE_RAID (Level: $PART_RAID_LEVEL)"
+  echo "Boot size/filesystem:  $PART_BOOT_SIZE / $PART_BOOT_FS"
+  echo "Swap size:             $PART_SWAP_SIZE"
+  echo "Root filesystem:       $PART_ROOT_FS"
+  echo "Debian release/mirror: $DEBIAN_RELEASE / $DEBIAN_MIRROR"
+  echo "Use DHCP:              $NETWORK_USE_DHCP"
+  echo "GRUB targets:          ${GRUB_TARGET_DRIVES[*]}"
+  echo "Hostname:              $SYSTEM_HOSTNAME"
+  echo "Sudo user:             $SYSTEM_SUDO_USER"
+  echo "==================================="
+  read -rp "Start installation with these settings? (yes/no): " CONFIRM
+  if [ "$CONFIRM" != "yes" ]; then
+    echo "[ABORTED] Installation cancelled by user."
+    exit 1
+  fi
 
+  echo "[INFO] Saving confirmed configuration to $CONFIG_FILE"
+  cat <<EOF > "$CONFIG_FILE"
+# === Partitioning ===
+PART_DRIVE1="$PART_DRIVE1"
+PART_DRIVE2="$PART_DRIVE2"
+PART_USE_RAID="$PART_USE_RAID"
+PART_RAID_LEVEL="$PART_RAID_LEVEL"
+PART_BOOT_SIZE="$PART_BOOT_SIZE"
+PART_SWAP_SIZE="$PART_SWAP_SIZE"
+PART_ROOT_FS="$PART_ROOT_FS"
+PART_BOOT_FS="$PART_BOOT_FS"
+
+# === Debian install ===
+DEBIAN_RELEASE="$DEBIAN_RELEASE"
+DEBIAN_MIRROR="$DEBIAN_MIRROR"
+INSTALL_TARGET="$INSTALL_TARGET"
+
+# === Network ===
+NETWORK_USE_DHCP="$NETWORK_USE_DHCP"
+
+# === GRUB ===
+GRUB_TARGET_DRIVES=(${GRUB_TARGET_DRIVES[*]})
+
+# === System ===
+SYSTEM_HOSTNAME="$SYSTEM_HOSTNAME"
+SYSTEM_SUDO_USER="$SYSTEM_SUDO_USER"
+SYSTEM_USER_PASSWORD_HASH="$SYSTEM_USER_PASSWORD_HASH"
+EOF
+}
 ### Entrypoints ###
 configuring() {
     configure_partitioning
