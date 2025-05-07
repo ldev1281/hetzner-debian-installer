@@ -140,16 +140,17 @@ sys::wait_mdraid() {
 
   msg::info "Waiting for the RAID of the boot device $DEFAULT_PART_BOOT_RAID to synchronize..."
   while true; do
-    line=$(grep -A1 "^${boot_raid_dev} " /proc/mdstat | tail -n1)
+    line=$(grep -A2 "^${boot_raid_dev} " /proc/mdstat | tail -n1)
     if echo "$line" | grep -q 'resync\|recovery\|check'; then
-      percent=$(echo "$line" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,\2\}%')
+      percent=$(echo "$line" | grep -oE '[0-9]{1,3}\.[0-9]{1,2}%')
       printf "\rSynchronization /dev/%s: %s" "$boot_raid_dev" "$percent"
       sleep 5
     else
       break
     fi
   done
-  msg::success "\nBoot RAID device $DEFAULT_PART_BOOT_RAID synchronization completed"
+  echo
+  msg::success "Boot RAID device $DEFAULT_PART_BOOT_RAID synchronization completed"
 }
 
 sys::swap_off() {
