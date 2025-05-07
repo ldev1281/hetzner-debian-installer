@@ -144,7 +144,7 @@ sys::wait_mdraid() {
     if echo "$line" | grep -q 'resync\|recovery\|check'; then
       percent=$(echo "$line" | grep -oE '[0-9]{1,3}\.[0-9]{1,2}%')
       printf "\rSynchronization /dev/%s: %s" "$boot_raid_dev" "$percent"
-      sleep 5
+      sleep 0.5
     else
       break
     fi
