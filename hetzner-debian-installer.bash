@@ -135,6 +135,23 @@ sys::wait_udev() {
   sys::exec udevadm settle
 }
 
+sys::wait_mdraid() {
+  local boot_raid_dev="${DEFAULT_PART_BOOT_RAID##*/}"
+
+  msg::info "Waiting for the RAID of the boot device $DEFAULT_PART_BOOT_RAID to synchronize..."
+  while true; do
+    line=$(grep -A1 "^${boot_raid_dev} " /proc/mdstat | tail -n1)
+    if echo "$line" | grep -q 'resync\|recovery\|check'; then
+      percent=$(echo "$line" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,\2\}%')
+      printf "\rSynchronization /dev/%s: %s" "$boot_raid_dev" "$percent"
+      sleep 5
+    else
+      break
+    fi
+  done
+  msg::success "\nBoot RAID device $DEFAULT_PART_BOOT_RAID synchronization completed"
+}
+
 sys::swap_off() {
   msg::info "Disabling swap on all devices "
   sys::exec swapoff -a || sys::die "Operation failed"
@@ -819,6 +836,18 @@ install::cleanup() {
   sys::exec cp -a "$CONFIG_FILE" "$INSTALL_TARGET/root/"
   msg::info "Copying $LOG_FILE to $INSTALL_TARGET/root..."
   sys::exec cp -a "$LOG_FILE" "$INSTALL_TARGET/root/"
+  sys::wait_mdraid
+}
+
+install::reboot() {
+  local confirm_reboot
+  confirm_reboot=$(input::prompt "Reboot the server? (yes/no)")
+
+  if [ "$confirm_reboot" = "yes" ]; then
+    sys::reboot
+  else
+    exit
+  fi
 }
 
 ### Entrypoints ###
@@ -836,6 +865,7 @@ install::run() {
   net::run
   boot::run
   os::run
+  msg::success "Installation completed successfully"
 }
 
 main() {
@@ -847,7 +877,7 @@ main() {
   cfg::save
   install::run
   install::cleanup
-  sys::reboot
+  install::reboot
 }
 
 main "$@"
