@@ -851,6 +851,7 @@ install::reboot() {
   if [ "$confirm_reboot" = "yes" ]; then
     sys::reboot
   else
+    msg::warn "Reboot has been cancelled"
     exit
   fi
 }
