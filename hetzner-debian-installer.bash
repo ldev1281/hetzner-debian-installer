@@ -135,6 +135,24 @@ sys::wait_udev() {
   sys::exec udevadm settle
 }
 
+sys::wait_mdraid() {
+  local boot_raid_dev="${DEFAULT_PART_BOOT_RAID##*/}"
+
+  msg::info "Waiting for the RAID of the boot device $DEFAULT_PART_BOOT_RAID to synchronize..."
+  while true; do
+    line=$(grep -A2 "^${boot_raid_dev} " /proc/mdstat | tail -n1)
+    if echo "$line" | grep -q 'resync\|recovery\|check'; then
+      percent=$(echo "$line" | grep -oE '[0-9]{1,3}\.[0-9]{1,2}%')
+      printf "\rSynchronization /dev/%s: %s" "$boot_raid_dev" "$percent"
+      sleep 0.5
+    else
+      break
+    fi
+  done
+  echo
+  msg::success "Boot RAID device $DEFAULT_PART_BOOT_RAID synchronization completed"
+}
+
 sys::swap_off() {
   msg::info "Disabling swap on all devices "
   sys::exec swapoff -a || sys::die "Operation failed"
@@ -249,6 +267,7 @@ sys::init() {
   DEFAULT_DEBIAN_MIRROR="http://deb.debian.org/debian"
   DEFAULT_INSTALL_TARGET="/mnt"
   DEFAULT_DEBOOTSTRAP_INCLUDE="apt,bash,dpkg,ca-certificates,openssl,openssh-server,mdadm,wget,curl,sudo,e2fsprogs,iproute2,ifupdown2,vim,rsync"
+  DEFAULT_DEBOOTSTRAP_COMPONENTS="main,contrib,non-free,non-free-firmware"
 
   DEFAULT_NETWORK_IFACE="$(ip route | awk '/default/ {print $5}' | head -n1)"
   DEFAULT_NETWORK_CIDR="$(ip -o -f inet addr show "$DEFAULT_NETWORK_IFACE" | awk '{print $4}')"
@@ -602,7 +621,8 @@ debian::run() {
   sys::exec mount "$ROOT_PART" "$INSTALL_TARGET" || sys::die "Operation failed"
 
   msg::info "Starting debootstrap installation (Debian $DEBIAN_RELEASE)..."
-  sys::exec debootstrap --verbose --resolve-deps --variant=minbase --include="$DEFAULT_DEBOOTSTRAP_INCLUDE" --arch=amd64 "$DEBIAN_RELEASE" "$INSTALL_TARGET" "$DEBIAN_MIRROR" &&
+  sys::exec debootstrap --verbose --resolve-deps --variant=minbase --components="$DEFAULT_DEBOOTSTRAP_COMPONENTS" --include="$DEFAULT_DEBOOTSTRAP_INCLUDE" \
+    --arch=amd64 "$DEBIAN_RELEASE" "$INSTALL_TARGET" "$DEBIAN_MIRROR" &&
     msg::success "Debian base system installed successfully into $INSTALL_TARGET" ||
     sys::die "Operation failed"
 
@@ -664,6 +684,8 @@ boot::run() {
     set -e
     export HOME=/root
     export DEBIAN_FRONTEND=noninteractive
+    echo "# Debian Security repository" >> /etc/apt/sources.list
+    echo "deb http://security.debian.org/debian-security/ ${DEBIAN_RELEASE}-security  ${DEFAULT_DEBOOTSTRAP_COMPONENTS//,/ }" >> /etc/apt/sources.list
     apt-get update
     apt-get install -y initramfs-tools
     apt-get install -y systemd systemd-sysv
@@ -819,6 +841,19 @@ install::cleanup() {
   sys::exec cp -a "$CONFIG_FILE" "$INSTALL_TARGET/root/"
   msg::info "Copying $LOG_FILE to $INSTALL_TARGET/root..."
   sys::exec cp -a "$LOG_FILE" "$INSTALL_TARGET/root/"
+  sys::wait_mdraid
+}
+
+install::reboot() {
+  local confirm_reboot
+  confirm_reboot=$(input::prompt "Reboot the server? (yes/no)")
+
+  if [ "$confirm_reboot" = "yes" ]; then
+    sys::reboot
+  else
+    msg::warn "Reboot has been cancelled"
+    exit
+  fi
 }
 
 ### Entrypoints ###
@@ -836,6 +871,7 @@ install::run() {
   net::run
   boot::run
   os::run
+  msg::success "Installation completed successfully"
 }
 
 main() {
@@ -847,7 +883,7 @@ main() {
   cfg::save
   install::run
   install::cleanup
-  sys::reboot
+  install::reboot
 }
 
 main "$@"
