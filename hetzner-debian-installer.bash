@@ -502,7 +502,7 @@ os::cfg() {
 
   : ${SYSTEM_HOSTNAME:=$(input::prompt "Enter hostname" "" "$DEFAULT_SYSTEM_HOSTNAME")}
   : ${SYSTEM_SUDO_USER:=$(input::prompt "Enter username for sudo access" "" "$DEFAULT_SYSTEM_SUDO_USER")}
-  : ${SYSTEM_SSH_KEYS_AUTH:=$(input::prompt "Do you want to use SSH-keys to authenticate instead of using password authentication? (yes/no)" "" "$DEFAULT_SYSTEM_SSH_KEYS_AUTH" "nullable")}
+  : ${SYSTEM_SSH_KEYS_AUTH:=$(input::prompt "Do you want to use SSH-keys to authenticate instead of using password authentication? (yes/no)" "" "$DEFAULT_SYSTEM_SSH_KEYS_AUTH")}
 
   if [ "$SYSTEM_SSH_KEYS_AUTH" != "yes" ]; then
     if [ ! -v "SYSTEM_USER_PASSWORD_HASH" ] || [ -z "$SYSTEM_USER_PASSWORD_HASH" ]; then
@@ -521,7 +521,7 @@ os::cfg() {
   else
     if [ ! -v "SYSTEM_USER_SSH_KEYS" ] || [ -z "$SYSTEM_USER_SSH_KEYS" ]; then
       while true; do
-        ssh_key=$(input::prompt "Type a new ssh-key for the user '$SYSTEM_SUDO_USER' and press Enter. If you want to finish just leave this string empty and press Enter")
+        ssh_key=$(input::prompt "Type a new ssh-key for the user '$SYSTEM_SUDO_USER' and press Enter. If you want to finish just leave this string empty and press Enter" "" "" "nullable")
         if [ -n "$ssh_key" ]; then
           DEFAULT_SYSTEM_USER_SSH_KEYS+=(${ssh_key})
         else
