@@ -798,8 +798,8 @@ EOF
   msg::info "Adding $SYSTEM_SUDO_USER to sudo group"
   sys::exec chroot "$INSTALL_TARGET" usermod -aG sudo "$SYSTEM_SUDO_USER" || sys::die "Operation failed"
   if [ "$SYSTEM_SSH_KEYS_AUTH" = "yes" ]; then
-    echo "$SYSTEM_SUDO_USER ALL=(ALL) NOPASSWD:ALL" >"/etc/sudoers.d/${SYSTEM_SUDO_USER}"
-    sys::exec chmod 440 "/etc/sudoers.d/${SYSTEM_SUDO_USER}"
+    echo "$SYSTEM_SUDO_USER ALL=(ALL) NOPASSWD:ALL" >"$INSTALL_TARGET/etc/sudoers.d/${SYSTEM_SUDO_USER}"
+    sys::exec chmod 440 "$INSTALL_TARGET/etc/sudoers.d/${SYSTEM_SUDO_USER}"
   fi
 
   msg::info "Enabling only system-wide SSH-keys support"
