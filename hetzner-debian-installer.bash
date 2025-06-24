@@ -523,7 +523,7 @@ os::cfg() {
       while true; do
         ssh_key=$(input::prompt "Type a new ssh-key for the user '$SYSTEM_SUDO_USER' and press Enter. If you want to finish just leave this string empty and press Enter" "" "" "nullable")
         if [ -n "$ssh_key" ]; then
-          DEFAULT_SYSTEM_USER_SSH_KEYS+=(${ssh_key})
+          DEFAULT_SYSTEM_USER_SSH_KEYS+=("${ssh_key}")
         else
           break
         fi
@@ -786,7 +786,7 @@ EOF
     msg::info "Adding ssh-keys for $SYSTEM_SUDO_USER to /etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}"
     sys::exec mkdir -p ${INSTALL_TARGET}/etc/ssh/authorized_keys
     for key in "${SYSTEM_USER_SSH_KEYS[@]}"; do
-      echo "$key" >${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
+      echo "$key" >>${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
     done
     sys::exec chown root:root ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
     sys::exec chmod 644 ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
