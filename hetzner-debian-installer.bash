@@ -334,7 +334,7 @@ input::prompt() {
       read -r -p "$prompt: " input
     fi
 
-    if [ -z "$input" ] && [ -n "$default" ] && [ -z "$nullable" ]; then
+    if [ -z "$input" ] && [ -n "$default" ]; then
       input="$default"
     fi
 
