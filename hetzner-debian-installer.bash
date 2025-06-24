@@ -502,7 +502,7 @@ os::cfg() {
 
   : ${SYSTEM_HOSTNAME:=$(input::prompt "Enter hostname" "" "$DEFAULT_SYSTEM_HOSTNAME")}
   : ${SYSTEM_SUDO_USER:=$(input::prompt "Enter username for sudo access" "" "$DEFAULT_SYSTEM_SUDO_USER")}
-  : ${SYSTEM_SSH_KEYS_AUTH:=$(input::prompt "Do you want to use SSH-keys to authenticate instead of using password authentication? (yes/no)" "" "$DEFAULT_SYSTEM_SSH_KEYS_AUTH")}
+  : ${SYSTEM_SSH_KEYS_AUTH:=$(input::prompt "Do you want to use SSH-keys to authenticate instead of using password authentication? (yes/no)" "" "$DEFAULT_SYSTEM_SSH_KEYS_AUTH" "nullable")}
 
   if [ "$SYSTEM_SSH_KEYS_AUTH" != "yes" ]; then
     if [ ! -v "SYSTEM_USER_PASSWORD_HASH" ] || [ -z "$SYSTEM_USER_PASSWORD_HASH" ]; then
