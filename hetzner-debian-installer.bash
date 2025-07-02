@@ -278,7 +278,12 @@ sys::init() {
   DEFAULT_NETWORK_DNS="8.8.8.8 1.1.1.1"
 
   DEFAULT_SYSTEM_HOSTNAME="debian-server"
+  DEFAULT_SYSTEM_SSH_KEYS_AUTH="yes"
   DEFAULT_SYSTEM_SUDO_USER="admin"
+  DEFAULT_SYSTEM_USER_SSH_KEYS=(
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbO4uL+qnU+qgMtauHRM9lB3Y1yTwNhuq4B1hBGnKY/ User1"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII/1XbWCmxSlK4iMZrg3a+pjJxEbwYztEbzh7XVQ5b4A User2"
+  )
   DEFAULT_SYSTEM_USER_PASSWORD_HASH=""
 }
 
@@ -329,7 +334,7 @@ input::prompt() {
       read -r -p "$prompt: " input
     fi
 
-    if [ -z "$input" ] && [ -n "$default" ] && [ -z "$nullable" ]; then
+    if [ -z "$input" ] && [ -n "$default" ]; then
       input="$default"
     fi
 
@@ -493,21 +498,38 @@ os::cfg() {
   msg::info "[Configuring] Initial system settings"
   local pwd1
   local pwd2
+  local ssh_key
 
   : ${SYSTEM_HOSTNAME:=$(input::prompt "Enter hostname" "" "$DEFAULT_SYSTEM_HOSTNAME")}
   : ${SYSTEM_SUDO_USER:=$(input::prompt "Enter username for sudo access" "" "$DEFAULT_SYSTEM_SUDO_USER")}
+  : ${SYSTEM_SSH_KEYS_AUTH:=$(input::prompt "Do you want to use SSH-keys to authenticate instead of using password authentication? (yes/no)" "" "$DEFAULT_SYSTEM_SSH_KEYS_AUTH")}
 
-  if [ ! -v "SYSTEM_USER_PASSWORD_HASH" ] || [ -z "$SYSTEM_USER_PASSWORD_HASH" ]; then
-    while true; do
-      pwd1=$(input::prompt "Enter password for user '$SYSTEM_SUDO_USER'")
-      pwd2=$(input::prompt "Confirm password")
-      if [ "$pwd1" != "$pwd2" ]; then
-        msg::warn "Passwords do not match. Try again."
-      else
-        break
-      fi
-    done
-    SYSTEM_USER_PASSWORD_HASH=$(openssl passwd -6 "$pwd1")
+  if [ "$SYSTEM_SSH_KEYS_AUTH" != "yes" ]; then
+    if [ ! -v "SYSTEM_USER_PASSWORD_HASH" ] || [ -z "$SYSTEM_USER_PASSWORD_HASH" ]; then
+      while true; do
+        pwd1=$(input::prompt "Enter password for user '$SYSTEM_SUDO_USER'")
+        pwd2=$(input::prompt "Confirm password")
+        if [ "$pwd1" != "$pwd2" ]; then
+          msg::warn "Passwords do not match. Try again."
+        else
+          break
+        fi
+      done
+      SYSTEM_USER_PASSWORD_HASH=$(openssl passwd -6 "$pwd1")
+      SYSTEM_USER_SSH_KEYS=""
+    fi
+  else
+    if [ ! -v "SYSTEM_USER_SSH_KEYS" ] || [ -z "$SYSTEM_USER_SSH_KEYS" ]; then
+      while true; do
+        ssh_key=$(input::prompt "Type a new ssh-key for the user '$SYSTEM_SUDO_USER' and press Enter. If you want to finish just leave this string empty and press Enter" "" "" "nullable")
+        if [ -n "$ssh_key" ]; then
+          DEFAULT_SYSTEM_USER_SSH_KEYS+=("${ssh_key}")
+        else
+          break
+        fi
+      done
+      SYSTEM_USER_SSH_KEYS=("${DEFAULT_SYSTEM_USER_SSH_KEYS[@]}")
+    fi
   fi
 }
 
@@ -760,11 +782,28 @@ EOF
   msg::info "Creating user $SYSTEM_SUDO_USER"
   sys::exec chroot "$INSTALL_TARGET" useradd -m -s /bin/bash "$SYSTEM_SUDO_USER" || sys::die "Operation failed"
 
-  msg::info "Setting password for $SYSTEM_SUDO_USER"
-  echo "$SYSTEM_SUDO_USER:$SYSTEM_USER_PASSWORD_HASH" | chroot "$INSTALL_TARGET" chpasswd -e || sys::die "Operation failed"
+  if [ "$SYSTEM_SSH_KEYS_AUTH" = "yes" ]; then
+    msg::info "Adding ssh-keys for $SYSTEM_SUDO_USER to /etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}"
+    sys::exec mkdir -p ${INSTALL_TARGET}/etc/ssh/authorized_keys
+    for key in "${SYSTEM_USER_SSH_KEYS[@]}"; do
+      echo "$key" >>${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
+    done
+    sys::exec chown root:root ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
+    sys::exec chmod 644 ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
+  else
+    msg::info "Setting password for $SYSTEM_SUDO_USER"
+    echo "$SYSTEM_SUDO_USER:$SYSTEM_USER_PASSWORD_HASH" | chroot "$INSTALL_TARGET" chpasswd -e || sys::die "Operation failed"
+  fi
 
   msg::info "Adding $SYSTEM_SUDO_USER to sudo group"
   sys::exec chroot "$INSTALL_TARGET" usermod -aG sudo "$SYSTEM_SUDO_USER" || sys::die "Operation failed"
+  if [ "$SYSTEM_SSH_KEYS_AUTH" = "yes" ]; then
+    echo "$SYSTEM_SUDO_USER ALL=(ALL) NOPASSWD:ALL" >"$INSTALL_TARGET/etc/sudoers.d/${SYSTEM_SUDO_USER}"
+    sys::exec chmod 440 "$INSTALL_TARGET/etc/sudoers.d/${SYSTEM_SUDO_USER}"
+  fi
+
+  msg::info "Enabling only system-wide SSH-keys support"
+  echo "AuthorizedKeysFile /etc/ssh/authorized_keys/%u" >"$INSTALL_TARGET/etc/ssh/sshd_config.d/80-SystemAuthKeysFile.conf" || sys::die "Operation failed"
 
   msg::info "Disabling root SSH login"
   echo "PermitRootLogin no" >"$INSTALL_TARGET/etc/ssh/sshd_config.d/90-PermitRootLogin.conf" || sys::die "Operation failed"
@@ -807,6 +846,8 @@ cfg::dump() {
   DNS servers:             ${NETWORK_DNS[*]} \n \
   Hostname:                $SYSTEM_HOSTNAME \n \
   Sudo user:               $SYSTEM_SUDO_USER \n \
+  SSH-keys auth:           $SYSTEM_SSH_KEYS_AUTH \n \
+  SSH-keys for sudo user:  ${SYSTEM_USER_SSH_KEYS[*]:-none} \n \
   ==================================="
 }
 
@@ -827,7 +868,7 @@ cfg::save() {
     for varname in PART_DRIVE1 PART_DRIVE2 PART_USE_RAID PART_RAID_LEVEL PART_BOOT_SIZE PART_ROOT_FS PART_BOOT_FS \
       DEBIAN_RELEASE DEBIAN_MIRROR INSTALL_TARGET \
       NETWORK_IFACE NETWORK_IP NETWORK_MASK NETWORK_GATEWAY NETWORK_DNS \
-      SYSTEM_HOSTNAME SYSTEM_SUDO_USER SYSTEM_USER_PASSWORD_HASH; do
+      SYSTEM_HOSTNAME SYSTEM_SUDO_USER SYSTEM_USER_PASSWORD_HASH SYSTEM_USER_SSH_KEYS SYSTEM_SSH_KEYS_AUTH; do
       [ -v "$varname" ] && declare -p "$varname"
     done
 
