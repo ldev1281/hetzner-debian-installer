@@ -14,7 +14,7 @@ To install Debian on your Hetzner server:
 2. Connect to your server via SSH.
 3. Run the following command:
 ```bash
-wget https://github.com/username/hetzner-debian-installer/releases/latest/download/hetzner-debian-installer.bash && chmod +x hetzner-debian-installer.bash && ./hetzner-debian-installer.bash
+wget https://github.com/ldev1281/hetzner-debian-installer/releases/latest/download/hetzner-debian-installer.bash && chmod +x hetzner-debian-installer.bash && ./hetzner-debian-installer.bash
 ```
 
 The installation script runs automatically within a detached `screen` session.
