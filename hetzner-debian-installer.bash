@@ -808,6 +808,9 @@ EOF
   msg::info "Disabling root SSH login"
   echo "PermitRootLogin no" >"$INSTALL_TARGET/etc/ssh/sshd_config.d/90-PermitRootLogin.conf" || sys::die "Operation failed"
 
+  msg::info "Setting default locale as built-in C.UTF-8"
+  echo "LANG=C.UTF-8" >"$INSTALL_TARGET/etc/default/locale" || sys::die "Operation failed"
+
   if [ "$PART_USE_RAID" = "yes" ]; then
     msg::info "Updating GRUB config to sync ESP partitions..."
     # Make it executable only at this stage when fstab is populated
