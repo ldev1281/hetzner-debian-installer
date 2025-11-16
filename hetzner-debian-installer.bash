@@ -710,7 +710,7 @@ boot::run() {
     echo "deb http://security.debian.org/debian-security/ ${DEBIAN_RELEASE}-security  ${DEFAULT_DEBOOTSTRAP_COMPONENTS//,/ }" >> /etc/apt/sources.list
     apt-get update
     apt-get install -y initramfs-tools
-    apt-get install -y systemd systemd-sysv
+    apt-get install -y systemd systemd-sysv systemd-timesyncd
     apt-get install -y linux-image-amd64 grub-efi
 EOF
 
