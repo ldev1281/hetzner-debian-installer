@@ -131,7 +131,6 @@ sys::gen_uuid() {
 }
 
 sys::wait_udev() {
-  sys::exec udevadm trigger
   sys::exec udevadm settle
 }
 
@@ -195,13 +194,22 @@ sys::mdraid_off() {
   done < <(mdadm -D -s)
 }
 
+sys::mdraid_zero_members() {
+  msg::info "Zeroing MD superblocks on all linux_raid_member partitions..."
+  while read -r part; do
+    [ -b "$part" ] || continue
+    sys::exec mdadm --zero-superblock --force "$part" || msg::error "Operation failed, but the installation will continue"
+    sys::exec wipefs -a "$part" || msg::error "Operation failed, but the installation will continue"
+  done < <(lsblk -nrpo NAME,FSTYPE | awk '$2=="linux_raid_member"{print $1}')
+}
+
 sys::clear_parts() {
   if [ -b "${1-}" ]; then
     msg::info "Clearing ${1} partitions and MBR/GPT"
     sys::exec dd if=/dev/zero of="$1" bs=1M count=10 status=none || sys::die "Operation failed"
     sys::exec wipefs -a "$1" || sys::die "Operation failed"
     sys::exec sgdisk -Z "$1" || sys::die "Operation failed"
-    sys::exec partprobe || msg::error "partprobe failed"
+    sys::exec partprobe "$1" || msg::error "Partprobe failed"
   else
     msg::error "Device ${1-} is not a block device"
   fi
@@ -251,7 +259,8 @@ sys::init() {
   done
 
   # No matching pair found
-  DEFAULT_PART_DRIVE1="${DEFAULT_PART_DRIVE1:-$DISKS[0]}"
+  DEFAULT_PART_DRIVE1="${DEFAULT_PART_DRIVE1:-${DISKS[0]}}"
+  DEFAULT_PART_DRIVE2="${DEFAULT_PART_DRIVE2:-${DISKS[1]:-}}"
 
   DEFAULT_PART_USE_RAID="${DEFAULT_PART_DRIVE2:+yes}"
   DEFAULT_PART_RAID_LEVEL="1"
@@ -369,8 +378,8 @@ disks::cfg() {
   # If we already detected that we can use RAID then check for the first and second disk. If PART_DRIVE2 is set but PART_DRIVE1 is not set then assume nothing is set
   if [ "$DEFAULT_PART_USE_RAID" = "yes" ]; then
     if [ -n "${PART_DRIVE1:-}" ] && [ -z "${PART_DRIVE2:-}" ]; then
-      msg::warn "There are two disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2 of the same size found but only $PART_DRIVE1 is set in the config $CONFIG_FILE"
-      DEFAULT_PART_USE_RAID=$(input::prompt "Do you want to build RAID with disks $DEFAULT_PART_DRIVE1 and ${DEFAULT_PART_DRIVE2}? (yes/no)" "" "$DEFAULT_PART_USE_RAID")
+      msg::warn "There are two suitable disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2 found but only $PART_DRIVE1 is set in the config $CONFIG_FILE"
+      DEFAULT_PART_USE_RAID=$(input::prompt "Do you want to build RAID with disks $DEFAULT_PART_DRIVE1 and ${DEFAULT_PART_DRIVE2} (sizes may differ)? (yes/no)" "" "$DEFAULT_PART_USE_RAID")
       if [ "$DEFAULT_PART_USE_RAID" = "yes" ]; then
         PART_DRIVE1=$DEFAULT_PART_DRIVE1
         PART_DRIVE2=$DEFAULT_PART_DRIVE2
@@ -384,7 +393,7 @@ disks::cfg() {
       fi
     elif [ -n "${PART_DRIVE1:-}" ] && [ -n "${PART_DRIVE2:-}" ]; then
       if [ "$PART_DRIVE1" != "$DEFAULT_PART_DRIVE1" ] || [ "$PART_DRIVE2" != "$DEFAULT_PART_DRIVE2" ]; then
-        msg::warn "Disks $PART_DRIVE1 and $PART_DRIVE2 from the config do not match found system disks of the same size $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2"
+        msg::warn "Disks $PART_DRIVE1 and $PART_DRIVE2 from the config do not match found system disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2"
         force_config=$(input::prompt "Do you want to build RAID with disks $PART_DRIVE1 and $PART_DRIVE2 from the config? (yes/no)")
         if [ "$force_config" != "yes" ]; then
           PART_DRIVE1=$(input::prompt "Primary disk" "" "$DEFAULT_PART_DRIVE1")
@@ -411,11 +420,16 @@ disks::cfg() {
         PART_RAID_LEVEL="$DEFAULT_PART_RAID_LEVEL"
       fi
     else
-      msg::info "There are two disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2 of the same size found"
-      DEFAULT_PART_USE_RAID=$(input::prompt "Do you want to build RAID with disks $DEFAULT_PART_DRIVE1 and ${DEFAULT_PART_DRIVE2}? (yes/no)" "" "$DEFAULT_PART_USE_RAID")
+      msg::info "There are two suitable disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2 found"
+      DEFAULT_PART_USE_RAID=$(input::prompt "Do you want to build RAID with disks $DEFAULT_PART_DRIVE1 and $DEFAULT_PART_DRIVE2 (sizes may differ)? (yes/no)" "" "$DEFAULT_PART_USE_RAID")
       if [ "$DEFAULT_PART_USE_RAID" = "yes" ]; then
         PART_DRIVE1=$DEFAULT_PART_DRIVE1
         PART_DRIVE2=$DEFAULT_PART_DRIVE2
+        PART_DRIVE1_SIZE=$(sys::get_disk_size "$PART_DRIVE1")
+        PART_DRIVE2_SIZE=$(sys::get_disk_size "$PART_DRIVE2")
+        if [ "$PART_DRIVE1_SIZE" -ne "$PART_DRIVE2_SIZE" ]; then
+          msg::warn "Disk sizes do not match ($PART_DRIVE1: ${PART_DRIVE1_SIZE}GB, $PART_DRIVE2: ${PART_DRIVE2_SIZE}GB). RAID may waste space or fail."
+        fi
         PART_USE_RAID="yes"
         PART_RAID_LEVEL="$DEFAULT_PART_RAID_LEVEL"
       else
@@ -429,7 +443,7 @@ disks::cfg() {
     fi
   else
     if [ -n "${PART_DRIVE1:-}" ] && [ -n "${PART_DRIVE2:-}" ]; then
-      msg::warn "No disks of the same size found in system but disks $PART_DRIVE1 and $PART_DRIVE2 are set in the config"
+      msg::warn "No suitable disks of the same size found in system but disks $PART_DRIVE1 and $PART_DRIVE2 are set in the config"
       force_config=$(input::prompt "Do you want to build RAID with disks $PART_DRIVE1 and $PART_DRIVE2 from config? (yes/no)")
       if [ "$force_config" != "yes" ]; then
         msg::info "Continue with single mode disk"
@@ -553,6 +567,7 @@ disks::run() {
   sys::lvm_off
   sys::devmapper_off
   sys::mdraid_off
+  sys::mdraid_zero_members
 
   EFI_END=$(numfmt --from=iec "$DEFAULT_PART_EFI_SIZE")
   BOOT_END=$((EFI_END + $(numfmt --from=iec "$PART_BOOT_SIZE")))
@@ -576,10 +591,12 @@ disks::run() {
 
     msg::info "Creating root partition on $disk..."
     sys::exec parted -s "$disk" mkpart primary "$PART_ROOT_FS" "$BOOT_END_HUMAN" 100% || sys::die "Operation failed"
-  done
 
-  msg::info "Waiting for the device to be ready"
-  sys::wait_udev
+    # Ensure kernel/udev sees new partitions before we reference /dev/*
+    sys::exec partprobe "$disk" || true
+    msg::info "Waiting for the device to be ready"
+    sys::wait_udev
+  done
 
   if [ "$PART_USE_RAID" = "yes" ]; then
     EFI_PART1=$(sys::get_part_name "$PART_DRIVE1" 1)
@@ -588,10 +605,6 @@ disks::run() {
     BOOT_RAID_PART2=$(sys::get_part_name "$PART_DRIVE2" 2)
     ROOT_RAID_PART1=$(sys::get_part_name "$PART_DRIVE1" 3)
     ROOT_RAID_PART2=$(sys::get_part_name "$PART_DRIVE2" 3)
-
-    msg::info "Clearing RAID superblocks on disks..."
-    sys::exec mdadm --zero-superblock --force "$DEFAULT_PART_BOOT_RAID" || msg::error "Operation failed, but the installation will continue"
-    sys::exec mdadm --zero-superblock --force "$DEFAULT_PART_ROOT_RAID" || msg::error "Operation failed, but the installation will continue"
 
     msg::info "Creating RAID array for /boot partition..."
     sys::exec mdadm --create --verbose $DEFAULT_PART_BOOT_RAID --level="$PART_RAID_LEVEL" --raid-devices=2 --run "$BOOT_RAID_PART1" "$BOOT_RAID_PART2" || sys::die "Operation failed"
@@ -766,13 +779,13 @@ os::run() {
 
   msg::info "Generating /etc/fstab"
   sys::exec cat <<-EOF >"$INSTALL_TARGET/etc/fstab" || sys::die "Operation failed"
-UUID=$(sys::gen_uuid $ROOT_PART) / ext4 defaults 0 1
-UUID=$(sys::gen_uuid $BOOT_PART) /boot ext3 defaults 0 2
-UUID=$(sys::gen_uuid $EFI_PART1) /boot/efi vfat umask=0077,errors=remount-ro,nofail 0 1
+UUID=$(sys::gen_uuid "$ROOT_PART") / $PART_ROOT_FS defaults 0 1
+UUID=$(sys::gen_uuid "$BOOT_PART") /boot $PART_BOOT_FS defaults 0 2
+UUID=$(sys::gen_uuid "$EFI_PART1") /boot/efi vfat umask=0077,errors=remount-ro,nofail 0 1
 EOF
 
   [ "$PART_USE_RAID" = "yes" ] && {
-    echo "UUID=$(sys::gen_uuid $EFI_PART2) /boot/efi2 vfat umask=0077,errors=remount-ro,nofail,noauto 0 1" >>"$INSTALL_TARGET/etc/fstab" || sys::die "Operation failed"
+    echo "UUID=$(sys::gen_uuid "$EFI_PART2") /boot/efi2 vfat umask=0077,errors=remount-ro,nofail,noauto 0 1" >>"$INSTALL_TARGET/etc/fstab" || sys::die "Operation failed"
   }
 
   msg::info "Setting hostname to $SYSTEM_HOSTNAME"
@@ -784,9 +797,9 @@ EOF
 
   if [ "$SYSTEM_SSH_KEYS_AUTH" = "yes" ]; then
     msg::info "Adding ssh-keys for $SYSTEM_SUDO_USER to /etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}"
-    sys::exec mkdir -p ${INSTALL_TARGET}/etc/ssh/authorized_keys
+    sys::exec mkdir -p "$INSTALL_TARGET/etc/ssh/authorized_keys"
     for key in "${SYSTEM_USER_SSH_KEYS[@]}"; do
-      echo "$key" >>${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
+      echo "$key" >>"$INSTALL_TARGET/etc/ssh/authorized_keys/$SYSTEM_SUDO_USER"
     done
     sys::exec chown root:root ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
     sys::exec chmod 644 ${INSTALL_TARGET}/etc/ssh/authorized_keys/${SYSTEM_SUDO_USER}
