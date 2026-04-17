@@ -370,6 +370,12 @@ disks::cfg() {
   local force_config
   msg::info "[Configuring] Disks and RAID"
 
+  # Init vars to avoid unbound
+  : "${PART_DRIVE1=}"
+  : "${PART_DRIVE2=}"
+  : "${PART_USE_RAID=}"
+  : "${PART_RAID_LEVEL=}"
+
   msg::info "Detected disks:"
   for disk in "${DISKS[@]}"; do
     msg::info "- $disk ($(sys::get_disk_size $disk)GB)"
@@ -898,7 +904,7 @@ install::cleanup() {
   sys::exec cp -a "$CONFIG_FILE" "$INSTALL_TARGET/root/"
   msg::info "Copying $LOG_FILE to $INSTALL_TARGET/root..."
   sys::exec cp -a "$LOG_FILE" "$INSTALL_TARGET/root/"
-  sys::wait_mdraid
+  [ "${PART_USE_RAID:-}" = "yes" ] && sys::wait_mdraid
 }
 
 install::reboot() {
